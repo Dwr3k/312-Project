@@ -4,7 +4,6 @@ from math import floor
 
 class scheduler:
     def roundRobin(self, ready, waiting):
-
         total = 0
         for x in ready:
             for y in x.processInstructions:
@@ -18,3 +17,4 @@ class scheduler:
         #print("quantum is: " + str(total))
 
         return ready, waiting, total
+

@@ -8,3 +8,4 @@ class pcb:
         self.processType = proc.processType
         self.currentInstructions = current
         self.isCritical = False
+        self.hasChild = []

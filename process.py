@@ -13,6 +13,7 @@ class process:
         self.criticalEnd = 0
         self.processType = enums.processTypes.NEW
         self.currentInstruction = ()
+        self.memory = 0
 
         with open(path, 'r') as file:
             for line in file:
@@ -42,6 +43,12 @@ class process:
         self.criticalEnd = randint(self.criticalStart + 1, len(self.processInstructions))
         self.currentInstruction = self.processInstructions[0]
         self.pcb = PCB.pcb(self, self.currentInstruction)
+        length = 0
+        for x in self.processInstructions:
+            length += x[1]
+
+        self.memory = .5 * length
+        #print(self.memory)
 
     def switchState(self, newState):
         self.processType = newState

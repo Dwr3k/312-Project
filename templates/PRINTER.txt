@@ -3,4 +3,5 @@ I/O		10	26
 I/O		7	45
 CALCULATE	100	450
 I/O		5	10
+FORK    1   1
 I/O		15	25

@@ -15,23 +15,25 @@ templateNames = []
 allProcess = []
 readyQueue = []
 waitingQueue = []
-isCritical = (False, -1)
+# isCritical = (False, -1)
 
 RR = scheduler.scheduler()
+
+lock = threading.Lock()
 
 def doSetup():
     getTemplates()
     makeCombos()
 
 
-def getTemplates():
+def getTemplates():#reads the name of all templates in templates folder
     global templateNames
     global numTemplates
     templateNames = os.listdir('templates')
     numTemplates = len(templateNames)
 
 
-def makeCombos():
+def makeCombos():#populates comboBox with choices
     global generationType_comboBox, processType_comboBox
     generationType_comboBox.addItem('Automatic')
     generationType_comboBox.addItem('Manual')
@@ -40,12 +42,13 @@ def makeCombos():
         processType_comboBox.addItem(templateNames[x])
 
 
-def startUpdate():
-    loop = threading.Thread(target=updateClicked())
+def startUpdate(): #attempt at making thread to constantly update loop processes
+    loop = threading.Thread(target=updateClicked)
     loop.start()
+    loop.join()
 
 
-def updateClicked():
+def updateClicked():#When clicked, would update number of processes in each state (doesnt work currently)
     global newProcess_label, runningProcess_label, waitingProcess_label, terminatedProcess_label, readyProcess_label, allProcess
 
     new = 0
@@ -66,16 +69,14 @@ def updateClicked():
         else:
             terminated = terminated + 1
 
-    newProcess_label.setText('New: ' + str(new))
-    readyProcess_label.setText('Ready: ' + str(ready))
-    runningProcess_label.setText('Running: ' + str(running))
-    waitingProcess_label.setText('Waiting: ' + str(waiting))
-    terminatedProcess_label.setText('Terminated: ' + str(terminated))
+        newProcess_label.setText('New: ' + str(new))
+        readyProcess_label.setText('Ready: ' + str(ready))
+        runningProcess_label.setText('Running: ' + str(running))
+        waitingProcess_label.setText('Waiting: ' + str(waiting))
+        terminatedProcess_label.setText('Terminated: ' + str(terminated))
 
 
-def runProcess(p, quantum):
-    global readyQueue, waitingQueue, RR, isCritical
-
+def threadRun(p, quantum, threadName):
     timer = 0
     instruction = p.pcb.currentInstructions
     instructionCounter = instruction[1]
@@ -83,62 +84,149 @@ def runProcess(p, quantum):
     while timer < quantum:
         instructionCounter = instructionCounter - 1
 
-        if instructionCounter == 0:
-            if instruction[2] == p.criticalEnd:
-                isCritical = False, -1
-                p.pcb.isCritical = False
+        if randint(0,100) < 5:#5% chance to get an IO interrupt
+            time.sleep(1)
+            print(threadName + " got an IO interrupt")
 
+        if instructionCounter == 0: #if instruction finished
+            if instruction[2] == p.criticalEnd:#if that was critical end
+                lock.release()
+                process.pcb.isCritical = False
 
-            if instruction[2] == len(p.processInstructions) - 1: #if last instruction
-                p.switchState(enums.processTypes.TERMINATED) #Terminate Process
-                RR.roundRobin(readyQueue, waitingQueue)
-            else:
-                instruction = p.processInstructions[instruction[2] + 1] #switch intsturciton
+            if instruction[2] == p.criticalStart:#if the start of critical section
+                lock.acquire()
+                p.pcb.isCritical = True
 
-                if instruction[2] == p.criticalStart:
-                    isCritical = (True, p.pcb.pid)
-                    p.pcb.isCritical = True
+            if instruction[2] == len(p.processInstructions) - 1:#All instructions completed
+                p.switchState(enums.processTypes.TERMINATED)
+                return
+            else:                       #Still more instructions
+                instruction = p.processInstructions[instruction[2] + 1]  #go to next instruction
 
-                if instruction[0] == enums.instructionTypes.IO:
-                    p.switchState(enums.processTypes.WAITING)#switch ti waiting
-                    RR.roundRobin(readyQueue, waitingQueue)
-
+            if instruction[0] == enums.instructionTypes.IO: ##if its IO instruction, switch to waiting
+                p.switchState(enums.processTypes.WAITING)  # switch to waiting
+            elif instruction[0] == enums.instructionTypes.FORK:#make child process on next instruction
+                temp = p
+                temp.pcb.pid += +1
+                temp.pcb.isCritical = False
+                temp.switchState(enums.processTypes.WAITING)
+                temp.processInstructions[instruction[2] + 1]
+                p.pcb.hasChild.append(temp.pid)
+                allProcess.append(temp)
+                waitingQueue.append(temp)
         timer = timer + 1
 
 
+    p.switchState(enums.processTypes.WAITING)#if quantum time finishes and still more instrucitons, switch to waiting
+
+    if p.pcb.isCritical: #releases lock if didnt finish before quantum was up
+        lock.release()
+        p.pcb.isCritical = False
+
+
 def simulateAutomatic():
-    global numTemplates, waitingQueue, readyQueue, isCritical, RR, allProcess, processNumber_spinBox
-    numProcess = randint(0, 10)
+    global readyQueue, waitingQueue
 
-    waitingQueue = []
-    readyQueue = []
+    thread1 = threading.Thread()
+    thread2 = threading.Thread()
+    thread3 = threading.Thread()
+    thread4 = threading.Thread()
 
+    newQueue = []
+    runningQueue = []
+    threads = [(0,thread1),(0,thread2),(0,thread3),(0,thread4)]
+
+    numProcess = 10
+    maxMem = 1024
     counter = 0
-    while counter < numProcess:
+    terminated = 0
+
+    while counter < numProcess:  # Makes all inital processes
         randTemplate = randint(0, numTemplates - 1)
         temp = process.process(templateNames[randTemplate])
         allProcess.append(temp)
-        temp.switchState(enums.processTypes.READY)
 
-        readyQueue.append(temp)
-        readyQueue, waitingQueue, quantum = RR.roundRobin(readyQueue, waitingQueue)
-
-        if not isCritical[0] or (isCritical[0] and isCritical[1] == readyQueue[0].pcb.pid):
-            readyQueue[0].switchState(enums.processTypes.RUNNING)
-            runProcess(readyQueue[0], quantum)
+        if maxMem - temp.memory > 0:
+            readyQueue.append(temp)
+            maxMem -= temp.memory
         else:
-            temp = readyQueue[0]
-            temp.switchState(enums.processTypes.WAITING)
-            waitingQueue.append(temp)
-            del readyQueue[0]
+            newQueue.append(temp)
+
+        counter += 1
+
+    print("finished making initial processes")
+
+    while True:
+        for x in range(4):
+            if len(readyQueue) >= 1:
+                runningQueue.append(readyQueue.pop(0))
+
+        readyQueue, waitingQueue, quantum = RR.roundRobin(readyQueue, waitingQueue)#gets quantum
+
+        if len(readyQueue) >= 1:#Sees how many processes can run on memory, and makes appropriate amount of threads
+            threads[0] = (1, thread1, runningQueue[0])
+            thread1 = threading.Thread(target=threadRun, args=(runningQueue[0], quantum, "thread1"))
+            thread1.start()
+        if len(readyQueue) >= 2:
+            threads[1] = (1, thread2, runningQueue[1])
+            thread2 = threading.Thread(target=threadRun, args=(runningQueue[1], quantum, "thread2"))
+            thread2.start()
+        if len(readyQueue) >= 3:
+            threads[2] = (1, thread3, runningQueue[2])
+            thread3 = threading.Thread(target=threadRun, args=(runningQueue[2], quantum, "thread3"))
+            thread3.start()
+        if len(readyQueue) >= 4:
+            threads[3] = (1, thread4, runningQueue[3])
+            thread4 = threading.Thread(target=threadRun, args=(runningQueue[3], 15, "thread4"))
+            thread4.start()
+
+        if thread1.is_alive():#wait for all 4 processes to finish running
+            thread1.join()
+        if thread2.is_alive():
+            thread2.join()
+        if thread3.is_alive():
+            thread3.join()
+        if thread4.is_alive():
+            thread4.join()
+
+        #print("all done")
+
+        ###Figure out what happened here###
+
+        for x in range(4):
+            if len(runningQueue) >= 1:
+                temp = runningQueue.pop(0)
+                maxMem += temp.memory #simulates freeing up memory
+
+                if temp.processType == enums.processTypes.WAITING:
+                    waitingQueue.append(temp)
+
+                if temp.processType == enums.processTypes.TERMINATED:
+                    for i in temp.pcb.hasChild: #Cascading Termination
+                        for n in allProcess:
+                            if i == n.pcb.pid:#goes through all processes and finds the id to terminate
+                                n.switchState(enums.processTypes.TERMINATED)
+
+        if len(newQueue) > 0:
+            for p in newQueue:
+                if maxMem - p.memory > 0:
+                    temp = newQueue.pop(0)
+                    temp.switchState(enums.processTypes.RUNNING)
+                    readyQueue.append(temp)
 
         readyQueue, waitingQueue, quantum = RR.roundRobin(readyQueue, waitingQueue)
 
-        counter = counter + 1
+        startUpdate()
 
-        #updateClicked()
+        done = 0
+        for x in allProcess:
+            if x.processType == enums.processTypes.TERMINATED:
+                done += done
 
-    #print(allProcess)
+        break
+
+        if done == len(allProcess):
+            break
 
 
 def startClicked():
@@ -166,14 +254,12 @@ start_pushButton = window.findChild(QtWidgets.QPushButton, 'start_pushButton')
 start_pushButton.clicked.connect(startClicked)
 
 statistics_pushButton = window.findChild(QtWidgets.QPushButton, 'statistics_pushButton')
+statistics_pushButton.clicked.connect(startUpdate)
 
 doSetup()
 
-startUpdate()
-
 window.show()
 app.exec()
-
 
 
 
