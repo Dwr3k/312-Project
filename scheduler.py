@@ -18,3 +18,20 @@ class scheduler:
 
         return ready, waiting, total
 
+    def SJF(self, ready, waiting):
+        processTimes = []
+        counter = 0
+        for x in waiting:
+            time = 0
+            for i in x.processInstructions:
+                time = time + i[1]
+            processTimes.append((counter, time))
+            counter = counter + 1
+
+        processTimes.sort(key=lambda tup: tup[1])
+
+        newWaiting = []
+        for x in processTimes:
+            newWaiting.append(waiting[x[0]])
+
+        return ready, newWaiting

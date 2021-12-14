@@ -81,8 +81,16 @@ def threadRun(p, quantum, threadName):
     instruction = p.pcb.currentInstructions
     instructionCounter = instruction[1]
 
+    pages = [-1,-1,-1,-1,-1]
+
     while timer < quantum:
         instructionCounter = instructionCounter - 1
+
+        reference = randint(0,10)#make a random int, if it isnt in page list already, add new page in and take oldest page out
+        if reference not in pages:
+            pages.pop(4)
+            pages.append(reference)
+
 
         if randint(0,100) < 5:#5% chance to get an IO interrupt
             time.sleep(1)
@@ -114,6 +122,8 @@ def threadRun(p, quantum, threadName):
                 p.pcb.hasChild.append(temp.pid)
                 allProcess.append(temp)
                 waitingQueue.append(temp)
+
+                temp.send(temp.pcb.pid-1, "I have been born parent", temp.mid, allProcess)#sends message to parent indicating it was made
         timer = timer + 1
 
 
@@ -134,6 +144,7 @@ def simulateAutomatic():
 
     newQueue = []
     runningQueue = []
+    runningQueue2 = []
     threads = [(0,thread1),(0,thread2),(0,thread3),(0,thread4)]
 
     numProcess = 10
@@ -180,6 +191,7 @@ def simulateAutomatic():
             thread4 = threading.Thread(target=threadRun, args=(runningQueue[3], 15, "thread4"))
             thread4.start()
 
+
         if thread1.is_alive():#wait for all 4 processes to finish running
             thread1.join()
         if thread2.is_alive():
@@ -207,6 +219,7 @@ def simulateAutomatic():
                             if i == n.pcb.pid:#goes through all processes and finds the id to terminate
                                 n.switchState(enums.processTypes.TERMINATED)
 
+
         if len(newQueue) > 0:
             for p in newQueue:
                 if maxMem - p.memory > 0:
@@ -214,7 +227,7 @@ def simulateAutomatic():
                     temp.switchState(enums.processTypes.RUNNING)
                     readyQueue.append(temp)
 
-        readyQueue, waitingQueue, quantum = RR.roundRobin(readyQueue, waitingQueue)
+        readyQueue, waitingQueue = RR.SJF(readyQueue, waitingQueue)
 
         startUpdate()
 

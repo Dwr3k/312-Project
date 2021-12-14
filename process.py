@@ -15,6 +15,10 @@ class process:
         self.currentInstruction = ()
         self.memory = 0
 
+        self.mailbox = []
+        self.mailid = randint(1,10)
+        self.priority = randint(0, 4)
+
         with open(path, 'r') as file:
             for line in file:
                 for word in line.split():
@@ -52,3 +56,12 @@ class process:
 
     def switchState(self, newState):
         self.processType = newState
+
+    def send(self, pid, message, mid, allP):
+        for p in allP:
+            if p.pcb.pid == pid:
+                p.receive(message, mid)
+
+    def receive(self, message, mid):
+        if mid == self.mid:
+            self.mailbox.append(message)
